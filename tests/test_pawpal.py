@@ -516,3 +516,130 @@ def test_detect_conflicts_always_returns_list(sample_owner):
     result = Scheduler(sample_owner).detect_conflicts(schedule)
     assert isinstance(result, list)
     assert all(isinstance(c, str) for c in result)
+
+
+# ---------------------------------------------------------------------------
+# Happy paths
+# ---------------------------------------------------------------------------
+
+def test_happy_path_complete_and_schedule_next_day(sample_pet):
+    """Completing a daily task marks it done and the follow-up is due tomorrow."""
+    follow_up = sample_pet.complete_task("Morning walk")
+    assert follow_up is not None
+    assert follow_up.due_date == date.today() + timedelta(days=1)
+    assert follow_up.completed is False
+
+def test_happy_path_schedule_returns_all_tasks_when_budget_is_large():
+    """When available_minutes far exceeds total task time, every due task is included."""
+    owner = Owner(name="Jordan", available_minutes=9999)
+    pet = Pet(name="Mochi", species="dog", age=3)
+    pet.add_task(Task(title="Walk",      duration_minutes=20, priority="high",   category="walk",    time_slot="morning"))
+    pet.add_task(Task(title="Breakfast", duration_minutes=5,  priority="high",   category="feeding", time_slot="morning"))
+    pet.add_task(Task(title="Puzzle",    duration_minutes=15, priority="low",    category="enrichment", time_slot="afternoon"))
+    owner.add_pet(pet)
+    schedule = Scheduler(owner).generate()
+    assert len(schedule.planned_tasks) == 3
+
+def test_happy_path_weekly_task_appears_when_overdue():
+    """A weekly task last done 8 days ago is included in today's schedule."""
+    owner = Owner(name="Sam", available_minutes=60)
+    pet = Pet(name="Rex", species="dog", age=4)
+    task = Task(title="Nail trim", duration_minutes=10, priority="low", category="grooming", frequency="weekly")
+    task.last_completed_date = date.today() - timedelta(days=8)
+    pet.add_task(task)
+    owner.add_pet(pet)
+    schedule = Scheduler(owner).generate()
+    assert any(t.title == "Nail trim" for _, t in schedule.planned_tasks)
+
+def test_happy_path_no_conflicts_in_normal_schedule(sample_owner):
+    """A well-formed schedule with tasks spread across slots produces no conflicts."""
+    schedule = Scheduler(sample_owner).generate()
+    assert schedule.conflicts == []
+
+def test_happy_path_sort_by_time_orders_correctly():
+    """sort_by_time returns tasks in ascending HH:MM order."""
+    owner = Owner(name="Test", available_minutes=120)
+    scheduler = Scheduler(owner)
+    pet = Pet(name="Buddy", species="dog", age=2)
+    tasks = [
+        (pet, Task(title="Evening",   duration_minutes=10, priority="low",  category="walk", scheduled_time="18:00")),
+        (pet, Task(title="Morning",   duration_minutes=10, priority="high", category="walk", scheduled_time="07:00")),
+        (pet, Task(title="Afternoon", duration_minutes=10, priority="low",  category="walk", scheduled_time="13:30")),
+    ]
+    result = scheduler.sort_by_time(tasks)
+    titles = [t.title for _, t in result]
+    assert titles == ["Morning", "Afternoon", "Evening"]
+
+
+# ---------------------------------------------------------------------------
+# Edge cases
+# ---------------------------------------------------------------------------
+
+def test_edge_pet_with_no_tasks_produces_empty_schedule():
+    """A pet registered with zero tasks should not crash and yields an empty schedule."""
+    owner = Owner(name="Alex", available_minutes=60)
+    owner.add_pet(Pet(name="Ghost", species="cat", age=1))
+    schedule = Scheduler(owner).generate()
+    assert schedule.planned_tasks == []
+    assert schedule.conflicts == []
+
+def test_edge_two_tasks_at_exact_same_time_detected():
+    """Two tasks pinned to the identical HH:MM time produce exactly one collision conflict."""
+    owner = _make_owner_with_timed_tasks(
+        ("Rex", [("Walk", "09:00"), ("Meds", "09:00")]),
+    )
+    schedule = Scheduler(owner).generate()
+    collisions = [c for c in schedule.conflicts if "collision" in c.lower()]
+    assert len(collisions) == 1
+    assert "09:00" in collisions[0]
+
+def test_edge_weekly_task_at_exact_7_day_boundary():
+    """A weekly task last done exactly 7 days ago is due today (boundary is inclusive)."""
+    task = Task(title="Bath", duration_minutes=20, priority="medium", category="grooming", frequency="weekly")
+    task.last_completed_date = date.today() - timedelta(days=7)
+    assert task.is_due_today() is True
+
+def test_edge_complete_task_twice_completes_recurring_copy(sample_pet):
+    """Calling complete_task a second time matches the pending recurring copy (same title).
+
+    Known behaviour: complete_task searches by title, so the second call finds
+    the recurring_copy appended by the first call and completes it, producing a
+    second copy.  This test documents that behaviour; callers should guard
+    against double-completing the same logical task.
+    """
+    sample_pet.complete_task("Morning walk")          # completes original → copy #1 added
+    count_after_first = len(sample_pet.get_tasks())   # original + 3 tasks = 4
+    sample_pet.complete_task("Morning walk")          # completes copy #1 → copy #2 added
+    assert len(sample_pet.get_tasks()) == count_after_first + 1
+
+def test_edge_undo_on_never_completed_task_is_noop(sample_pet):
+    """undo_complete on a task that was never completed leaves the list unchanged."""
+    count_before = len(sample_pet.get_tasks())
+    sample_pet.undo_complete("Morning walk")
+    assert len(sample_pet.get_tasks()) == count_before
+    original = next(t for t in sample_pet.get_tasks() if t.title == "Morning walk")
+    assert original.completed is False
+
+def test_edge_budget_zero_yields_empty_schedule(sample_owner):
+    """available_minutes=0 means no task can fit; schedule must be empty."""
+    sample_owner.set_availability(0)
+    schedule = Scheduler(sample_owner).generate()
+    assert schedule.planned_tasks == []
+
+def test_edge_recurring_copy_not_due_same_day(sample_pet):
+    """The follow-up created by complete_task has a future due_date and is not due today."""
+    sample_pet.complete_task("Morning walk")
+    copies = [t for t in sample_pet.get_tasks() if t.recurring_copy]
+    assert len(copies) == 1
+    assert copies[0].is_due_today() is False
+
+def test_edge_sort_by_time_untimed_tasks_go_last():
+    """Tasks with no scheduled_time sort after all timed tasks."""
+    owner = Owner(name="Test", available_minutes=120)
+    scheduler = Scheduler(owner)
+    pet = Pet(name="Buddy", species="dog", age=2)
+    timed   = (pet, Task(title="Timed",   duration_minutes=5, priority="low", category="walk", scheduled_time="23:00"))
+    untimed = (pet, Task(title="Untimed", duration_minutes=5, priority="low", category="walk", scheduled_time=""))
+    result = scheduler.sort_by_time([untimed, timed])
+    assert result[0][1].title == "Timed"
+    assert result[1][1].title == "Untimed"

@@ -65,6 +65,34 @@ Each check runs inside its own `try/except`, so a malformed time value produces 
 
 ---
 
+## Testing PawPal+
+
+Tests live in `tests/test_pawpal.py` and cover the full scheduling pipeline.
+
+### Running the tests
+
+```bash
+python3 -m pytest tests/test_pawpal.py -v
+```
+
+All 76 tests should pass.
+
+### What is tested
+
+| Category | Examples |
+|---|---|
+| **Sorting correctness** | Tasks returned in chronological `HH:MM` order; untimed tasks sorted last |
+| **Recurrence logic** | Completing a daily task creates a follow-up due tomorrow; weekly follow-up due in 7 days; as-needed tasks produce no follow-up |
+| **Conflict detection** | Duplicate times on the same or different pets; slot overbooked; same pet with two tasks of the same category in one slot |
+| **Happy paths** | Full budget fits all tasks; overdue weekly task appears; normal schedule has no conflicts |
+| **Edge cases** | Pet with no tasks; `available_minutes=0`; `undo_complete` on a never-completed task; weekly boundary at exactly 7 days; malformed `scheduled_time` produces a warning, not a crash |
+
+### Known behaviour to be aware of
+
+`complete_task` matches by title, so calling it twice on a task with a pending recurring copy (same title) will complete the copy and chain a second follow-up. Guard against double-completion in the UI layer.
+
+---
+
 ### Suggested workflow
 
 1. Read the scenario carefully and identify requirements and edge cases.

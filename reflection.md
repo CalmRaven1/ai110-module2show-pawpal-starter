@@ -1,5 +1,11 @@
 # PawPal+ Project Reflection
 
+## 📸 Demo
+
+<a href="/course_images/ai110/pawpal_screenshot_1.png" target="_blank"><img src='/course_images/ai110/pawpal_screenshot_1.png' title='PawPal App — Owner Info & Add a Pet' width='' alt='PawPal App' class='center-block' /></a>
+
+<a href="/course_images/ai110/pawpal_screenshot_2.png" target="_blank"><img src='/course_images/ai110/pawpal_screenshot_2.png' title='PawPal App — Add a Task & Generate Schedule' width='' alt='PawPal App' class='center-block' /></a>
+
 ## 1. System Design
 Enter owner + pet info
 Add/edit care tasks
@@ -73,12 +79,21 @@ Overlap detection makes sense when tasks have fixed, non-negotiable durations (s
 **a. How you used AI**
 
 - How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
+I asked Claude AI to compare the initial UML prose against the final code and identify gaps
+Test generation: used AI to draft happy-path and edge-case tests, then ran them to verify
+Debugging: when test_edge_complete_task_twice failed, AI diagnosed that complete_task searches by title and finds the pending recurring copy — not the original
 - What kinds of prompts or questions were most helpful?
+#codebase + a specific question (e.g. "what edge cases should I test?")
+Asking AI to explain why a test failed before accepting any fix
 
 **b. Judgment and verification**
 
 - Describe one moment where you did not accept an AI suggestion as-is.
+The double-completion test — AI's first version asserted the second call was a no-op.
+
 - How did you evaluate or verify what the AI suggested?
+The test failed, revealing a real bug. Rather than silently fixing the test to pass, you kept it and updated it to document the actual (surprising) behaviour. That's a moment where you evaluated the AI's assumption and rejected it.
+
 
 ---
 
@@ -87,25 +102,33 @@ Overlap detection makes sense when tasks have fixed, non-negotiable durations (s
 **a. What you tested**
 
 - What behaviors did you test?
+Sorting correctness, recurrence logic, conflict detection, happy paths, edge cases — 76 tests total in tests/test_pawpal.py
+
 - Why were these tests important?
+Recurrence and conflict detection have subtle boundary conditions (exactly 7 days, same-title task matching) that are invisible without tests
 
 **b. Confidence**
 
 - How confident are you that your scheduler works correctly?
+4/5
 - What edge cases would you test next if you had more time?
-
+Edge cases to test next: overlap detection (30-min task at 09:00 + task at 09:15), multi-pet budget priority, UI-layer guard against double-completion
 ---
 
 ## 5. Reflection
 
 **a. What went well**
-
 - What part of this project are you most satisfied with?
+The test coverage and scheduling logic. Writing 76 tests forced me to think precisely about edge cases I would have glossed over — the recurring task matching, the 7-day boundary for is_due_today, and the exact-match conflict detector all emerged more clearly from testing than from design alone.
 
 **b. What you would improve**
 
 - If you had another iteration, what would you improve or redesign?
+I'd add true overlap detection to the conflict checker — right now it only flags two tasks at the exact same start time, but a 30-minute walk at 09:00 and a feeding at 09:15 silently overlap. I'd also redesign the task removal workflow; during development I found it frustrating that deleting a task wasn't available earlier in the UI, which meant recovering from mistakes required workarounds.
+
 
 **c. Key takeaway**
 
 - What is one important thing you learned about designing systems or working with AI on this project?
+AI suggestions need to be run, not just read. When AI drafted the double-completion test, its assertion looked reasonable on paper — but running it exposed a real bug in how complete_task matches by title. That moment taught me to treat AI output as a first draft that the test suite has to approve, not a finished answer.
+

@@ -1,26 +1,46 @@
-# PawPal+ (Module 2 Project)
+# PawPal+
 
-You are building **PawPal+**, a Streamlit app that helps a pet owner plan care tasks for their pet.
+**PawPal+** is a Streamlit app that helps pet owners plan and track daily care tasks across multiple pets. It generates a prioritised, conflict-checked daily schedule that fits within the time you have available.
 
-## Scenario
+---
 
-A busy pet owner needs help staying consistent with pet care. They want an assistant that can:
+## Features
 
-- Track pet care tasks (walks, feeding, meds, enrichment, grooming, etc.)
-- Consider constraints (time available, priority, owner preferences)
-- Produce a daily plan and explain why it chose that plan
+### Priority-based greedy scheduling
+The scheduler (`Scheduler.generate()`) sorts all due tasks by a four-key rule before fitting them into the day's time budget:
+1. **Time slot** — morning tasks are always considered before afternoon, then evening, then anytime.
+2. **Priority** — high before medium before low within each slot.
+3. **Medication first** — `meds` tasks are promoted ahead of other categories at equal priority.
+4. **Shorter tasks first** — when two tasks tie on all other keys, the shorter one is scheduled first to maximise the number of tasks that fit.
 
-Your job is to design the system first (UML), then implement the logic in Python, then connect it to the Streamlit UI.
+Tasks that exceed the remaining budget are skipped and named in the explanation.
 
-## What you will build
+### Sorting by time
+`Scheduler.sort_by_time()` orders any task list chronologically by `scheduled_time` (`HH:MM`). Each time string is parsed into an `(hour, minute)` integer tuple before comparison, so `09:05 < 09:30 < 14:00` is always correct regardless of string-sorting edge cases. Tasks with no scheduled time are pushed to the end of the list.
 
-Your final app should:
+### Daily and weekly recurrence
+Completing a task automatically queues its next occurrence:
+- **Daily** — a fresh copy is appended with `due_date = today + 1 day`.
+- **Weekly** — a fresh copy is appended with `due_date = today + 7 days`.
+- **As-needed** — marked done with no follow-up created.
 
-- Let a user enter basic owner + pet info
-- Let a user add/edit tasks (duration + priority at minimum)
-- Generate a daily schedule/plan based on constraints and priorities
-- Display the plan clearly (and ideally explain the reasoning)
-- Include tests for the most important scheduling behaviors
+`Pet.undo_complete()` reverses this cleanly: the original task returns to pending and the auto-generated copy is removed.
+
+### Conflict warnings
+`Scheduler.detect_conflicts()` runs three independent checks after every schedule is built:
+1. **Slot capacity** — warns if tasks in a named slot exceed its time limit (morning: 120 min; afternoon/evening: 90 min).
+2. **Duplicate categories** — warns if the same pet has two tasks of the same category (e.g. two walks) in the same slot.
+3. **Exact time collisions** — warns if two or more tasks share an identical `scheduled_time`, whether on the same pet or different pets.
+
+Each check is isolated in its own `try/except` so a malformed time value produces a warning string instead of crashing the app.
+
+### Filtering
+Both `Owner.filter_tasks()` and `Scheduler.filter_tasks()` accept any `(Pet, Task)` list and narrow it by pet name, completion status (`pending` / `completed`), or both. The original list is never modified, so filters can be chained freely with `sort_by_time()`.
+
+### Plain-language schedule explanation
+Every generated schedule includes a human-readable summary (`schedule.explanation`) that names how many tasks were scheduled, which tasks were skipped due to time, and which recurring tasks are not yet due.
+
+---
 
 ## Getting started
 
@@ -31,6 +51,27 @@ python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
+
+### Run the app
+
+```bash
+streamlit run app.py
+```
+
+---
+
+## Project files
+
+| File | Purpose |
+|---|---|
+| `pawpal_system.py` | Core logic — `Task`, `Pet`, `Owner`, `Schedule`, `Scheduler` |
+| `app.py` | Streamlit UI |
+| `tests/test_pawpal.py` | Automated test suite (76 tests) |
+| `uml_final.png` | Final class diagram |
+| `uml_final.mmd` | Mermaid source for the class diagram |
+| `reflection.md` | Design decisions and project reflection |
+
+---
 
 ## Smarter Scheduling
 

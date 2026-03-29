@@ -10,6 +10,39 @@ if "owner" not in st.session_state:
 # --- Header ---
 st.title("🐾 PawPal+")
 
+# ── 📸 Demo ───────────────────────────────────────────────
+with st.expander("📸 Demo — load sample data"):
+    st.caption("Populates two pets and six tasks so you can try every feature instantly.")
+    st.image("demo_screenshot.png", caption="PawPal+ — final app", use_container_width=True)
+    if st.button("Load demo data"):
+        demo_owner = Owner(name="Jordan", available_minutes=90, preference="morning")
+
+        mochi = Pet(name="Mochi", species="dog", age=3)
+        mochi.add_task(Task(title="Morning walk",  duration_minutes=20, priority="high",
+                            category="walk",       frequency="daily",   time_slot="morning",
+                            scheduled_time="07:30"))
+        mochi.add_task(Task(title="Breakfast",     duration_minutes=5,  priority="high",
+                            category="feeding",    frequency="daily",   time_slot="morning",
+                            scheduled_time="08:00"))
+        mochi.add_task(Task(title="Flea meds",     duration_minutes=3,  priority="high",
+                            category="meds",       frequency="weekly",  time_slot="morning",
+                            scheduled_time="08:05"))
+        mochi.add_task(Task(title="Puzzle toy",    duration_minutes=15, priority="low",
+                            category="enrichment", frequency="daily",   time_slot="afternoon"))
+
+        luna = Pet(name="Luna", species="cat", age=5)
+        luna.add_task(Task(title="Dinner",         duration_minutes=5,  priority="high",
+                           category="feeding",     frequency="daily",   time_slot="evening",
+                           scheduled_time="18:00"))
+        luna.add_task(Task(title="Grooming brush", duration_minutes=10, priority="medium",
+                           category="grooming",    frequency="weekly",  time_slot="evening"))
+
+        demo_owner.add_pet(mochi)
+        demo_owner.add_pet(luna)
+        st.session_state.owner = demo_owner
+        st.success("Demo data loaded — scroll down to explore tasks and generate a schedule!")
+        st.rerun()
+
 # ── Owner Info ────────────────────────────────────────────
 st.subheader("Owner Info")
 col1, col2 = st.columns(2)
@@ -112,21 +145,25 @@ else:
     visible_tasks = st.session_state.owner.filter_tasks(pet_arg, status_arg)
 
     # ── Task table with complete / delete per row ──────────
+    PRIORITY_ICON = {"high": "🔴", "medium": "🟡", "low": "🟢"}
     if visible_tasks:
-        st.markdown("**Tasks:**")
+        st.caption(f"{len(visible_tasks)} task(s) shown")
         for pet, task in visible_tasks:
             col_info, col_due, col_done, col_del = st.columns([5, 1, 1, 1])
             with col_info:
                 strike = "~~" if task.completed else ""
                 slot_label = f" `{task.time_slot}`" if task.time_slot != "anytime" else ""
+                p_icon = PRIORITY_ICON.get(task.priority, "")
                 st.markdown(
-                    f"{strike}**[{task.priority.upper()}]** {pet.name}: {task.title} "
+                    f"{strike}{p_icon} **{pet.name}: {task.title}** "
                     f"({task.duration_minutes} min, {task.frequency}){slot_label}{strike}"
                 )
             with col_due:
                 if not task.completed:
-                    due_label = "due" if task.is_due_today() else "not due"
-                    st.caption(due_label)
+                    if task.is_due_today():
+                        st.success("due")
+                    else:
+                        st.caption("not due")
             with col_done:
                 label = "Undo" if task.completed else "Done"
                 if st.button(label, key=f"done_{pet.name}_{task.title}"):
@@ -158,22 +195,53 @@ if st.button("Generate schedule"):
         scheduler = Scheduler(st.session_state.owner)
         schedule = scheduler.generate()
 
-        st.success(f"Schedule for {st.session_state.owner.name} — {schedule.date}")
-        st.markdown(f"**Total time:** {schedule.total_duration} min "
-                    f"/ {st.session_state.owner.available_minutes} min available")
+        st.success(f"Schedule ready for {st.session_state.owner.name} — {schedule.date}")
 
-        # Conflicts banner
-        for conflict in schedule.conflicts:
-            st.warning(f"⚠️ Conflict: {conflict}")
+        # Time budget metrics
+        remaining = st.session_state.owner.available_minutes - schedule.total_duration
+        col_m1, col_m2, col_m3 = st.columns(3)
+        col_m1.metric("Tasks scheduled", len(schedule.planned_tasks))
+        col_m2.metric("Time used", f"{schedule.total_duration} min")
+        col_m3.metric("Time remaining", f"{remaining} min")
 
-        PRIORITY_ICON = {"high": "🔴", "medium": "🟡", "low": "🟢"}
+        # Conflict warnings — grouped by type with plain-language guidance
+        if schedule.conflicts:
+            slot_conflicts  = [c for c in schedule.conflicts if "overbooked" in c or "tasks in the" in c]
+            time_conflicts  = [c for c in schedule.conflicts if "collision" in c.lower()]
+            other_conflicts = [c for c in schedule.conflicts
+                               if c not in slot_conflicts and c not in time_conflicts]
+            if time_conflicts:
+                body = "\n".join(f"- {c}" for c in time_conflicts)
+                st.warning(
+                    f"**Two tasks are pinned to the same start time.**  "
+                    f"Your pet can't do both at once — open the task list above and "
+                    f"change the time or slot for one of them.\n\n{body}"
+                )
+            if slot_conflicts:
+                body = "\n".join(f"- {c}" for c in slot_conflicts)
+                st.warning(
+                    f"**A time slot has more tasks than it can comfortably hold.**  "
+                    f"Consider spreading tasks across morning, afternoon, and evening.\n\n{body}"
+                )
+            if other_conflicts:
+                body = "\n".join(f"- {c}" for c in other_conflicts)
+                st.warning(f"**Scheduling note:**\n\n{body}")
+        else:
+            st.success("No conflicts — your schedule looks good!")
+
+        # Sort planned tasks chronologically by scheduled_time before display
+        sorted_tasks = scheduler.sort_by_time(schedule.planned_tasks)
+
+        st.markdown("#### Today's plan")
         SLOT_ICON = {"morning": "🌅", "afternoon": "☀️", "evening": "🌙", "anytime": ""}
-        for pet, task in schedule.planned_tasks:
-            icon = PRIORITY_ICON.get(task.priority, "")
+        for pet, task in sorted_tasks:
+            p_icon = PRIORITY_ICON.get(task.priority, "")
             slot_icon = SLOT_ICON.get(task.time_slot, "")
+            time_label = f" `{task.scheduled_time}`" if task.scheduled_time else ""
             st.markdown(
-                f"{icon}{slot_icon} **{task.title}** — {task.duration_minutes} min "
+                f"{p_icon}{slot_icon}{time_label} **{task.title}** — {task.duration_minutes} min "
                 f"`[{pet.name}]` _{task.frequency}_"
             )
 
-        st.info(schedule.explanation)
+        with st.expander("Why did the scheduler pick these tasks?"):
+            st.info(schedule.explanation)

@@ -1,0 +1,78 @@
+classDiagram
+    direction TB
+
+    class Task {
+        +str title
+        +int duration_minutes
+        +str priority
+        +str category
+        +str frequency
+        +str time_slot
+        +str scheduled_time
+        +bool completed
+        +bool recurring_copy
+        +Date last_completed_date
+        +Date due_date
+        +mark_complete()
+        +reset()
+        +next_occurrence() Task
+        +is_due_today() bool
+        +is_urgent() bool
+    }
+
+    class Pet {
+        +str name
+        +str species
+        +int age
+        +str notes
+        +list~Task~ tasks
+        +add_task(task)
+        +remove_task(title)
+        +get_tasks() list
+        +get_pending_tasks() list
+        +get_due_tasks() list
+        +complete_task(title) Task
+        +undo_complete(title)
+    }
+
+    class Owner {
+        +str name
+        +int available_minutes
+        +str preference
+        +list~Pet~ pets
+        +add_pet(pet)
+        +remove_pet(name)
+        +set_availability(minutes)
+        +get_all_tasks() list
+        +get_all_pending_tasks() list
+        +filter_tasks(pet_name, status) list
+    }
+
+    class Schedule {
+        +Date date
+        +list~tuple~ planned_tasks
+        +list~str~ conflicts
+        +str explanation
+        +total_duration int
+        +add_task(pet, task)
+        +remove_task(task)
+        +get_summary() str
+    }
+
+    class Scheduler {
+        +Owner owner
+        +filter_tasks(tasks, pet_name, status) list
+        +sort_by_time(tasks) list
+        +generate() Schedule
+        +detect_conflicts(schedule) list
+        -_collect_tasks() list
+        -_explain(schedule, all_due) str
+    }
+
+    Owner "1" *-- "0..*" Pet : owns
+    Pet "1" *-- "0..*" Task : owns
+    Scheduler --> Owner : uses
+    Scheduler ..> Schedule : creates
+    Schedule "1" o-- "0..*" Pet : references
+    Schedule "1" o-- "0..*" Task : references
+    Task ..> Task : next_occurrence()
